@@ -9,8 +9,7 @@ import {
   MoreHorizontal,
   Search,
 } from "lucide-react";
-import { useState } from "react";
-import { attendees } from "../data/attendees";
+import { useEffect, useState } from "react";
 import { IconButton } from "./icon-button";
 import { Table } from "./table/table";
 import { TableCell } from "./table/table-cell";
@@ -20,45 +19,128 @@ import { TableHeader } from "./table/tabled-header";
 dayjs.extend(relativeTime);
 dayjs.locale("pt-br");
 
-export function AttendeeList() {
-  const [search, setSearch] = useState<string>("");
-  const [page, setPage] = useState<number>(1);
+interface Attendee {
+  id: string;
+  name: string;
+  email: string;
+  createdAt: string;
+  checkedInAt: string | null;
+}
 
-  const totalPage = Math.ceil(attendees.length / 10);
+export function AttendeeList() {
+  const [isInputFocused, setInputFocused] = useState<boolean>(false);
+  const [search, setSearch] = useState<string>(() => {
+    const url = new URL(window.location.toString());
+
+    if (url.searchParams.has("search")) {
+      return url.searchParams.get("search") ?? "";
+    }
+
+    return "";
+  });
+  const [page, setPage] = useState<number>(() => {
+    const url = new URL(window.location.toString());
+
+    if (url.searchParams.has("page")) {
+      return Number(url.searchParams.get("page"));
+    }
+
+    return 1;
+  });
+
+  const [total, setTotal] = useState<number>(0);
+  const [attendees, setAttendees] = useState<Attendee[]>([]);
+
+  const totalPage = Math.ceil(total / 10);
+
+  useEffect(() => {
+    const url = new URL(
+      "http://localhost:3333/events/2bdc8d78-731f-48ea-a7d5-8dc26fd4db79/attendees?"
+    );
+
+    url.searchParams.set("pageIndex", String(page - 1));
+
+    if (search.length > 0) {
+      url.searchParams.set("query", search);
+    }
+
+    fetch(url)
+      .then((response) => response.json())
+      .then((data) => {
+        setAttendees(data.attendees);
+        setTotal(data.total);
+      });
+  }, [page, search]);
+
+  function setCurrentSearch(search: string) {
+    const url = new URL(window.location.toString());
+
+    url.searchParams.set("search", search);
+
+    window.history.pushState({}, "", url);
+
+    setSearch(search);
+  }
+
+  function setCurrentPage(page: number) {
+    const url = new URL(window.location.toString());
+
+    url.searchParams.set("page", String(page));
+
+    window.history.pushState({}, "", url);
+
+    setPage(page);
+  }
 
   function onSearchInputChanged(event: React.ChangeEvent<HTMLInputElement>) {
-    setSearch(event.target.value);
+    setCurrentSearch(event.target.value);
+    setCurrentPage(1);
   }
 
   function goToFirstPage() {
-    setPage(1);
+    setCurrentPage(1);
   }
 
   function goToLastPage() {
     setPage(totalPage);
+    setCurrentPage(totalPage);
   }
 
   function goToNextPage() {
-    setPage(page + 1);
+    setCurrentPage(page + 1);
   }
 
   function goToPreviousPage() {
-    setPage(page - 1);
+    setCurrentPage(page - 1);
+  }
+
+  function handleInputFocus() {
+    setInputFocused(!isInputFocused);
+  }
+
+  function handleInputBlur() {
+    setInputFocused(!isInputFocused);
   }
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex gap-3 items-center">
         <h1 className="text-2xl font-bold">Participantes</h1>
-        <div className="px-3 w-72 py-1.5 border border-white/10  rounded-lg text-sm flex items-center gap-3">
+        <div
+          className={`px-3 w-72 py-1.5 border-[1.6px] ${
+            isInputFocused ? "border-emerald-200" : "border-white/10"
+          } rounded-lg text-sm flex items-center gap-3`}
+          onFocus={handleInputFocus}
+          onBlur={handleInputBlur}
+        >
           <Search className="size-4 text-emerald-300" />
           <input
             className="bg-transparent flex-1 outline-none h-auto border-0 p-0 text-sm focus:ring-0"
             placeholder="Buscar participante..."
+            value={search}
             onChange={onSearchInputChanged}
           />
         </div>
-        {search}
       </div>
 
       <Table>
@@ -81,7 +163,7 @@ export function AttendeeList() {
         </thead>
 
         <tbody>
-          {attendees.slice((page - 1) * 10, page * 10).map((attendee) => {
+          {attendees.map((attendee) => {
             return (
               <TableRow key={attendee.id}>
                 <TableCell>
@@ -102,7 +184,13 @@ export function AttendeeList() {
                   </div>
                 </TableCell>
                 <TableCell>{dayjs().to(attendee.createdAt)}</TableCell>
-                <TableCell>{dayjs().to(attendee.checkedInAt)}</TableCell>
+                <TableCell>
+                  {!attendee.checkedInAt ? (
+                    <span className="text-zinc-500">Não fez check-in</span>
+                  ) : (
+                    dayjs().to(attendee.checkedInAt)
+                  )}
+                </TableCell>
                 <TableCell>
                   <IconButton transparent>
                     <MoreHorizontal className="size-4" />
@@ -114,7 +202,7 @@ export function AttendeeList() {
         </tbody>
         <tfoot>
           <TableCell colSpan={3}>
-            Mostrando 10 de {attendees.length} itens
+            Mostrando {attendees.length} de {total} itens
           </TableCell>
           <TableCell
             colSpan={3}
